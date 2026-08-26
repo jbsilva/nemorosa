@@ -554,18 +554,42 @@ class QBittorrentClient(TorrentClient):
             old_name (str): Old torrent name.
             new_name (str): New torrent name.
         """
+        # The two calls are independent and must stay that way. The first sets
+        # the name qBittorrent displays, which is cosmetic; the second moves the
+        # torrent's root folder onto the one the data is actually in, which is
+        # what lets the recheck find it. Sharing a try block meant a conflict on
+        # the cosmetic call skipped the one that matters, leaving the torrent at
+        # 0% with nothing logged to say why.
         try:
             await asyncify(self.client.torrents_rename)(
                 torrent_hash=torrent_hash,
                 new_torrent_name=new_name,
             )
+        except qbittorrentapi.Conflict409Error as e:
+            logger.debug(
+                "Could not set the display name of %s to %r: %s",
+                torrent_hash,
+                new_name,
+                e,
+            )
+
+        try:
             await asyncify(self.client.torrents_rename_folder)(
                 torrent_hash=torrent_hash,
                 old_path=old_name,
                 new_path=new_name,
             )
-        except qbittorrentapi.Conflict409Error:
-            pass
+        except qbittorrentapi.Conflict409Error as e:
+            # Not silent: the torrent still names the other site's folder, so
+            # its data will not be found and it will sit at 0%.
+            logger.warning(
+                "Could not rename the root folder of %s from %r to %r, so its "
+                "data will not be found: %s",
+                torrent_hash,
+                old_name,
+                new_name,
+                e,
+            )
 
     async def _rename_file(
         self, torrent_hash: str, old_path: str, new_name: str
