@@ -580,11 +580,15 @@ class QBittorrentClient(TorrentClient):
                 new_path=new_name,
             )
         except qbittorrentapi.Conflict409Error as e:
-            # Not silent: the torrent still names the other site's folder, so
-            # its data will not be found and it will sit at 0%.
-            logger.warning(
-                "Could not rename the root folder of %s from %r to %r, so its "
-                "data will not be found: %s",
+            # qBittorrent refuses to rename onto a directory that already
+            # exists, and for a cross seed the target is the local torrent's
+            # folder, so it usually does. The per-file renames that follow move
+            # each file into that folder instead and the torrent verifies, but
+            # only if there are any: with an empty rename map this was the one
+            # thing that could have found the data.
+            logger.debug(
+                "Could not rename the root folder of %s from %r to %r, "
+                "leaving the per-file renames to place its content: %s",
                 torrent_hash,
                 old_name,
                 new_name,
